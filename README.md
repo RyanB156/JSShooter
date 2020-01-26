@@ -11,3 +11,5 @@ Controls:
 	r: reset
 	esc: pause and view settings
 	Move the mouse to aim
+
+Open "index.html" to play

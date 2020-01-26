@@ -15,29 +15,95 @@ function resize() {
 }
 resize();
 
-
+function randomPoint() {
+    return { x: Math.random() * width, y: Math.random() * height };
+}
 
 function spawnEnemy(x, y) {
-    entities.push(new Entity(x, y, 0, 0, entityType.ENEMY, sizes.enemy));
+    var e = new Entity(x, y, 0, 0, entityType.ENEMY, sizes.enemy);
+    var pt = randomPoint();
+    e.goto(pt.x, pt.y);
+    entities.push(e);
 }
 
 function randomEnemy() {
-    var x = Math.random() * width;
-    var y = Math.random() * height;
-    spawnEnemy(x, y);
+    var pt = randomPoint();
+    spawnEnemy(pt.x, pt.y);
 }
 
-
 var player = new Entity(width / 2, height / 2, 0, 0, entityType.PLAYER, sizes.player);
-for (var i = 0; i < 20; i++)
+for (var i = 0; i < enemycount; i++)
     randomEnemy();
 var mesh = new ObjectMesh(width, height, 50, [player]);
+
+var gamemodes = {team: 'team', ffa: 'ffa'};
+var gamemode = gamemodes.team;
+
+var keys = {a: 65, w: 87, d: 68, s: 83, r: 82, space: 32, escape: 27};
+
+function sqrDist(a, b) {
+    return Math.pow((b.x - a.x), 2) + Math.pow((b.y - a.y), 2);
+}
+
+// Need smoother movement. E.g. Holding left then pressing and releasing right stops the player and the player must press left again.
+var vel = {
+    _pressed: {},
+    left: keys.a,
+    up: keys.w,
+    right: keys.d,
+    down: keys.s,
+    isDown: function(keyCode) {
+        return this._pressed[keyCode];
+    },
+    keydown: function(event) {
+        //console.log(event.keyCode);
+        switch (event.keyCode) {
+            case keys.a: player.vel.x = -player.speed; break;
+            case keys.w: player.vel.y = -player.speed; break;
+            case keys.d: player.vel.x = player.speed; break;
+            case keys.s: player.vel.y = player.speed; break;
+        }
+        this._pressed[event.keyCode] = true;
+    },
+    keyup: function(event) {
+        switch (event.keyCode) {
+            case keys.a: player.vel.x = this.isDown(this.right) ? player.speed : 0; break;
+            case keys.d: player.vel.x = this.isDown(this.left) ? -player.speed : 0; break;
+            case keys.s: player.vel.y = this.isDown(this.up) ? -player.speed : 0; break;
+            case keys.w: player.vel.y = this.isDown(this.down) ? player.speed : 0; break;
+        }
+        delete this._pressed[event.keyCode];
+    }
+}
+
+function playerAim(mousePos) {
+    player.target = mousePos;
+}
+
+function checkKeyUp(event) {
+
+    if (event.keyCode == keys.space)
+        player.spawnBullet(player.target.x, player.target.y);
+    else if (event.keyCode == keys.r)
+        reset();
+    else if (event.keyCode == keys.escape) {
+        running = !running;
+        if (running)
+            menu.style.display = "none";
+        else
+            menu.style.display = "block";
+    }
+    else
+        vel.keyup(event);
+}
 
 
 function reset() {
     player = new Entity(width / 2, height / 2, 0, 0, entityType.PLAYER, sizes.player);
     entities = [];
     enemycount = document.getElementById('enemycount').value;
+    firerate = document.getElementById('firerate').value;
+    viewdistance = document.getElementById('viewdistance').value;
 
     // *** Don't forget to remove this...
     for (var i = 0; i < enemycount; i++)
@@ -60,20 +126,49 @@ function update(progress) {
     
         for (var i = 0; i < entities.length; i++) {
             var e = entities[i];
-            if (e.entityType == entityType.BULLET) {
-                var nearbyEntities = mesh.checkCollisions(e);
-    
-                for (var j = 0; j < nearbyEntities.length; j++) {
-                    var n = nearbyEntities[j];
-                    if (nearbyEntities.length > 0)
-                        console.log(nearbyEntities);
-    
-                    // The other entity does not have a matching tag, is not a bullet, and the bullet is inside it.
-                    if (e.tag !== n.tag && n.entityType !== entityType.BULLET && sqrDist(e, n) < n.size * n.size) {
-                        console.log('killing ' + n.tag);
-                        e.alive = false;
-                        // *** May want to despawn the bullet after it kills one entity...
-                        n.alive = false;
+            if (e.alive) {
+                e.move();
+                if (e.entityType == entityType.BULLET) {
+                    var nearbyEntities = mesh.checkCollisions(e);
+        
+                    for (var j = 0; j < nearbyEntities.length; j++) {
+                        var n = nearbyEntities[j];
+                        if (nearbyEntities.length > 0)
+                            console.log(nearbyEntities);
+        
+                        // The other entity does not have a matching tag, is not a bullet, and the bullet is inside it.
+                        if (n.tag !== e.tag && n.entityType !== entityType.BULLET && sqrDist(e.pos, n.pos) < n.size * n.size) {
+                            if (gamemode === gamemodes.team && n.team !== e.team) {
+                                console.log('killing ' + n.tag);
+                                e.alive = false;
+                                n.alive = false;
+                            }
+                            
+                        }
+                    }
+                } else if (e.entityType === entityType.ENEMY) {
+                    var nearbyEntities = mesh.checkCollisions(e, viewdistance); // Find other entities that are roughly within 100 units of this entity.
+
+                    for (var j = 0; j < nearbyEntities.length; j++) {
+                        var n = nearbyEntities[j];
+                        if (gamemode === gamemodes.team && n.entityType !== e.entityType && n.entityType !== entityType.BULLET) {
+                            e.target = n.pos; // May adjust for velocity later...
+                            e.hasTarget = true;
+                            break;
+                        }
+                        e.hasTarget = false; // Remove target if no enemies are in range.
+                    }
+
+                    if (Math.random() < firerate && e.hasTarget && entities.length < entityCap) {
+                        e.spawnBullet(e.target.x, e.target.y);
+                    }
+
+                    if (sqrDist(e.pos, e.movePoint) < e.size) {
+                        e.stop();
+                        if (Math.random() < enemyMoveChance) {
+                            var pt = randomPoint();
+                            e.goto(pt.x, pt.y);
+                        }
                     }
                 }
             }
@@ -87,7 +182,6 @@ function update(progress) {
                 len--;
                 continue;
             }
-            entities[i].move();
         }
     }
     
@@ -109,16 +203,16 @@ function draw() {
     ctx.clearRect(0, 0, width, height);
     //console.log('Drawing' + ' with size = ' + player.size + ' ' + player.vx);
 
-    ctx.fillStyle = 'blue';
+    ctx.fillStyle = player.alive ? 'blue' : 'black';
     ctx.beginPath();
-    ctx.ellipse(player.x, player.y, player.size, player.size, 0, 0, 2 * Math.PI);
+    ctx.ellipse(player.pos.x, player.pos.y, player.size, player.size, 0, 0, 2 * Math.PI);
     ctx.fill();
 
     ctx.fillStyle = 'red';
     for (var i = 0; i < entities.length; i++) {
         var e = entities[i];
         ctx.beginPath();
-        ctx.ellipse(e.x, e.y, e.size, e.size, 0, 0, 2 * Math.PI);
+        ctx.ellipse(e.pos.x, e.pos.y, e.size, e.size, 0, 0, 2 * Math.PI);
         ctx.fill();
     }
 }

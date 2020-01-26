@@ -23,20 +23,23 @@ class ObjectMesh {
         for (var i = 0; i < entities.length; i++){
             var e = entities[i];
             if (e.alive) {
-                var bx = e.x / boxSize;
-                var by = e.y / boxSize;
+                var bx = e.pos.x / boxSize;
+                var by = e.pos.y / boxSize;
                 bx = Math.max(0, bx);
                 by = Math.max(0, by);
+                console.log("boxWidth: " + this.boxWidth + ", boxHeight: " + this.boxHeight + ", bx: " + bx + ", by: " + by);
                 this.mesh[Math.floor(bx)][Math.floor(by)].push(e);
             }
         }
     }
     // Return a list entities that are within a certain distance.
-    checkCollisions(e) {
+    // distance is an optional parameter. If it is not specified, then the mesh's default search radius will be used.
+    checkCollisions(e, distance) {
         var nearbyObjects = [];
-        var xPos = e.x;
-        var yPos = e.y;
-        var boxRadius = Math.floor(this.searchRadius / this.boxSize); // Flatten boxes into boxes with zero width to simplify finding the correct indices to fill.
+        var xPos = e.pos.x;
+        var yPos = e.pos.y;
+        var searchDist = distance == undefined ? this.searchRadius : distance;
+        var boxRadius = Math.floor(searchDist / this.boxSize); // Flatten boxes into boxes with zero width to simplify finding the correct indices to fill.
         boxRadius = boxRadius > 0 ? boxRadius : 1; // Make sure that some area is checked even if the searchRadius was smaller than the boxSize.
         var boxRSquared = boxRadius * boxRadius;
         var xBox = Math.round(xPos / boxSize);
